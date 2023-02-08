@@ -69,14 +69,11 @@ def add_to_table(table, add):
         def to_hashable(value):
             if isinstance(value, dict):
                 return tuple(sorted(value.items()))
-            if isinstance(value, list):
-                return frozenset(value)
-            return value
+            return frozenset(value) if isinstance(value, list) else value
 
         def from_hashable(value):
-            if isinstance(value, frozenset):
-                return list(value)
-            return value
+            return list(value) if isinstance(value, frozenset) else value
+
         if table is not None:
             table.index = pd.Series(table.index).apply(to_hashable)
         add.index = pd.Series(add.index).apply(to_hashable)
@@ -90,7 +87,7 @@ def add_to_table(table, add):
 def output_table(table, limit=None):
     table = table.sort_values(by="count", ascending=False).reset_index()
     if limit is not None:
-        table = table[0:limit]
+        table = table[:limit]
     return {"values": table.to_dict('records')}
 
 
@@ -128,7 +125,7 @@ def set_patterns_meta(meta, column_name, result, n=10):
 def inject_method_to_optimus(func):
     func_name = func.__name__
     _func_split = func_name.split("__")
-    
+
     if len(_func_split) == 3:
         func_type, accessor, method_name = _func_split
     elif len(_func_split) == 2:
@@ -136,16 +133,16 @@ def inject_method_to_optimus(func):
         accessor = None
     else:
         raise TypeError(f"Wrong name '{func_name}', must have the form 'type__accessor__name'")
-       
+
     from optimus.engines.base.basedataframe import BaseDataFrame
     from optimus.engines.base.columns import BaseColumns
     from optimus.engines.base.rows import BaseRows
-    
+
     from optimus.engines.base.engine import BaseEngine
     from optimus.engines.base.create import BaseCreate
-    
+
     _cls = None
-    
+
     if func_type == "df":
         if accessor == "cols":
             _cls = BaseColumns
@@ -153,25 +150,21 @@ def inject_method_to_optimus(func):
             _cls = BaseRows
         else:
             _cls = BaseDataFrame
-            
+
     elif func_type == "op":
-        if accessor == "create":
-            _cls = BaseCreate
-        else:
-            _cls = BaseEngine
-            
+        _cls = BaseCreate if accessor == "create" else BaseEngine
     if _cls is None:
         raise TypeError(f"Wrong name '{func_name}', must have the form 'type__accessor__name'")
-            
+
     if _cls in [BaseDataFrame, BaseEngine]:
         def binded(self, *args, **kwargs):
             _df = self
             return func(_df, *args, **kwargs)
-        
+
     else:
         def binded(self, *args, **kwargs):
             _df = self.root
             return func(_df, *args, **kwargs)
-    
+
     setattr(_cls, method_name, binded)
     return hasattr(_cls, method_name)

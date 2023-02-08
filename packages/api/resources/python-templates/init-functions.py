@@ -62,22 +62,22 @@ def df__preliminary_profile(df, cols="*"):
 def df__pattern_counts_cache(df, cols="*", n=10, mode=0, sample=None, last_sample=False, flush=False, force_cached=False):
     cols = df.cols.names(cols)
     result = {}
-    
+
     cache_key = ["pattern_counts", mode]
-    
+
     for column_name in cols:
         
         _cache_key = cache_key + [column_name]
         _meta_key = ["profile", "columns", column_name, "patterns"]
-        
+
         if force_cached:
             cached = glom.glom(df.cache, Path(*_cache_key), default=None)
-            result.update({column_name: output_table(cached, n)})
+            result[column_name] = output_table(cached, n)
             continue
-        
+
         if flush:
             df.cache = glom.assign(df.cache, Path(*_cache_key), None, missing=dict)
-        
+
         patterns = Meta.get(df.meta, Path(*_meta_key))
 
         has_patterns = patterns is not None and (n is None or n <= len(patterns["values"]) or not patterns["more"])
@@ -89,28 +89,25 @@ def df__pattern_counts_cache(df, cols="*", n=10, mode=0, sample=None, last_sampl
             complete = False
             sample_df = df if sample is None else df.iloc(lower_bound=sample[0], upper_bound=sample[1], copy=False)
             patterns = sample_df.cols.pattern_counts(column_name, n=None, mode=mode)[column_name]["values"]
-        
+
         if patterns is not None and len(patterns):
             pd_patterns = table_to_pandas(patterns)
 
-            if complete:
-                df.cache = glom.assign(df.cache, Path(*_cache_key), pd_patterns, missing=dict)
-            else:
-                cached = glom.glom(df.cache, Path(*_cache_key), default=None)            
+            if not complete:
+                cached = glom.glom(df.cache, Path(*_cache_key), default=None)
                 pd_patterns = add_to_table(cached, pd_patterns)
-                df.cache = glom.assign(df.cache, Path(*_cache_key), pd_patterns, missing=dict)
-
+            df.cache = glom.assign(df.cache, Path(*_cache_key), pd_patterns, missing=dict)
             if last_sample:
                 df.meta = set_patterns_meta(df.meta, column_name, pd_patterns, n)
 
             patterns = output_table(pd_patterns, n)
             patterns.update({"complete": complete})
-        
-            result.update({column_name: patterns})
-            
+
+            result[column_name] = patterns
+
         else:
-            result.update({column_name: None})
-    
+            result[column_name] = None
+
     return one_dict_to_val(result)
 
 
@@ -206,31 +203,31 @@ def df__profile_stats_cache(df, cols="*", sample=None, last_sample=False, flush=
 def df__profile_frequency_cache(df, cols="*", n=MAX_BUCKETS, sample=None, last_sample=False, flush=False, force_cached=False):
     cols = df.cols.names(cols)
     result = {}
-    
+
     cached_freqs = glom.glom(df.cache, "frequency", default=None) or {}
-    
+
     for column_name in cached_freqs:
         pd_frequency = cached_freqs[column_name]
         frequency = output_table(pd_frequency, n)
         frequency.update({"count_uniques": len(pd_frequency)})
         frequency.update({"complete": False})
-        result.update({column_name: frequency})    
-        
+        result[column_name] = frequency    
+
     cols = cols or {}
-    
+
     for column_name in cols:
         
         _cache_key = ["frequency", column_name]
         _meta_key = ["profile", "columns", column_name, "stats"]
-        
+
         if force_cached:
             cached = glom.glom(df.cache, Path(*_cache_key), default=None)
-            result.update({column_name: output_table(cached, n)})
+            result[column_name] = output_table(cached, n)
             continue
-        
+
         if flush:
             df.cache = glom.assign(df.cache, Path(*_cache_key), None, missing=dict)
-        
+
         stats = Meta.get(df.meta, Path(*_meta_key))
 
         has_freq = stats is not None and "frequency" in stats and (n is None or n <= len(stats["frequency"]) or not stats.get("more"))
@@ -242,75 +239,71 @@ def df__profile_frequency_cache(df, cols="*", n=MAX_BUCKETS, sample=None, last_s
             complete = False
             sample_df = df if sample is None else df.iloc(lower_bound=sample[0], upper_bound=sample[1], copy=False)
             _result = sample_df.cols.frequency(column_name, n=None)["frequency"][column_name]
-        
+
         frequency = _result["values"] if "values" in _result else None
-        
+
         if frequency is not None and len(frequency):
             pd_frequency = table_to_pandas(frequency)
 
-            if complete:
-                df.cache = glom.assign(df.cache, Path(*_cache_key), pd_frequency, missing=dict)
-            else:
-                cached = glom.glom(df.cache, Path(*_cache_key), default=None)            
+            if not complete:
+                cached = glom.glom(df.cache, Path(*_cache_key), default=None)
                 pd_frequency = add_to_table(cached, pd_frequency)
-                df.cache = glom.assign(df.cache, Path(*_cache_key), pd_frequency, missing=dict)
-
+            df.cache = glom.assign(df.cache, Path(*_cache_key), pd_frequency, missing=dict)
             frequency = output_table(pd_frequency, n)
             frequency.update({"count_uniques": len(pd_frequency)})
-                
+
             if last_sample:
                 cf = copy.deepcopy(frequency)
                 df.meta = Meta.set(df.meta, Path(*_meta_key, "frequency"), cf["values"])
                 df.meta = Meta.set(df.meta, Path(*_meta_key, "count_uniques"), cf["count_uniques"])
-            
+
             frequency.update({"complete": complete})
-            result.update({column_name: frequency})
-            
+            result[column_name] = frequency
+
         else:
-            result.update({column_name: None})
-    
+            result[column_name] = None
+
     return result # one_dict_to_val(result)
 
 
 def df__profile_hist_cache(df, cols="*", buckets=MAX_BUCKETS, sample=None, last_sample=False, flush=False, force_cached=False):
     cols = df.cols.names(cols)
-    result = {}
-    
     cached_hists = glom.glom(df.cache, Path("hist", buckets), default=None) or {}
-    
-    for column_name in cached_hists:
-        result.update({column_name: output_hist(cached_hists[column_name], buckets)})
-        
+
+    result = {
+        column_name: output_hist(cached_hists[column_name], buckets)
+        for column_name in cached_hists
+    }
     cols = cols or {}
-    
+
     for column_name in cols:
         
         _cache_key = ["hist", buckets, column_name]
         _min_cache_key = ["min" , column_name]
         _max_cache_key = ["max" , column_name]
         _meta_key = ["profile", "columns", column_name, "stats", "hist"]
-        
+
         if force_cached:
             cached = glom.glom(df.cache, Path(*_cache_key), default=None)
-            result.update({column_name: output_table(cached, buckets)})
+            result[column_name] = output_table(cached, buckets)
             continue
-            
+
         _min = glom.glom(df.cache, Path(*_min_cache_key), default=None)
         _max = glom.glom(df.cache, Path(*_max_cache_key), default=None)
-        
+
         if _min is None:
             _min = df.cols.min(column_name)
             df.cache = glom.assign(df.cache, Path(*_min_cache_key), _min, missing=dict)
-            
+
         if _max is None:
             _max = df.cols.max(column_name)
             df.cache = glom.assign(df.cache, Path(*_max_cache_key), _max, missing=dict)
-            
+
         _range = (_min, _max)
-        
+
         if flush:
             df.cache = glom.assign(df.cache, Path(*_cache_key), None, missing=dict)
-        
+
         hist = Meta.get(df.meta, Path(*_meta_key))
 
         has_hist = hist is not None and (buckets is None or buckets != len(hist))
@@ -322,27 +315,24 @@ def df__profile_hist_cache(df, cols="*", buckets=MAX_BUCKETS, sample=None, last_
             complete = False
             sample_df = df if sample is None else df.iloc(lower_bound=sample[0], upper_bound=sample[1], copy=False)
             hist = sample_df.cols.hist(column_name, buckets=buckets, range=_range)["hist"][column_name]
-        
+
         if hist is not None:
             pd_hist = hist_to_pandas(hist)
 
-            if complete:
-                df.cache = glom.assign(df.cache, Path(*_cache_key), pd_hist, missing=dict)
-            else:
-                cached = glom.glom(df.cache, Path(*_cache_key), default=None)            
+            if not complete:
+                cached = glom.glom(df.cache, Path(*_cache_key), default=None)
                 pd_hist = add_to_table(cached, pd_hist)
-                df.cache = glom.assign(df.cache, Path(*_cache_key), pd_hist, missing=dict)
-
+            df.cache = glom.assign(df.cache, Path(*_cache_key), pd_hist, missing=dict)
             hist = output_hist(pd_hist, buckets)
-                
+
             if last_sample:
                 df.meta = Meta.set(df.meta, Path(*_meta_key), hist)
-            
-            result.update({column_name: hist})
-            
+
+            result[column_name] = hist
+
         else:
-            result.update({column_name: None})
-    
+            result[column_name] = None
+
     return result # one_dict_to_val(result)
 
 
@@ -361,8 +351,12 @@ def df__profile_cache(df, cols="*", bins: int = MAX_BUCKETS, sample=None, last_s
     hist_cols = [col for col in cols if plot_type.get(col) == "hist"]
     freq_cols = [col for col in cols if plot_type.get(col) == "freq"]
     complete_stats_cols = [col for col in cols if plot_type.get(col) == "complete"]
-    
-    complete_stats_profile = df.profile(complete_stats_cols, bins=bins) if complete_stats_cols and len(complete_stats_cols) > 0 else {}
+
+    complete_stats_profile = (
+        df.profile(complete_stats_cols, bins=bins)
+        if complete_stats_cols and complete_stats_cols
+        else {}
+    )
 
     if flush:
         df.cache = glom.assign(df.cache, "profile", {}, missing=dict)
@@ -373,20 +367,20 @@ def df__profile_cache(df, cols="*", bins: int = MAX_BUCKETS, sample=None, last_s
 
         columns = Meta.get(df.meta, "profile.columns") or {}
         to_flush = df._cols_to_profile("*")
-        
+
         columns = {col: value for col, value in columns.items() if col not in to_flush}
-        
+
         df.meta = Meta.set(df.meta, "profile.columns", columns)
 
     stats, cols = df.profile_stats_cache(cols, sample=sample, last_sample=last_sample, flush=False, force_cached=force_cached)
-    
+
     hists = df.profile_hist_cache(hist_cols, buckets=bins, sample=sample, last_sample=last_sample, flush=False, force_cached=force_cached)
     freqs = df.profile_frequency_cache(freq_cols, n=bins, sample=sample, last_sample=last_sample, flush=False, force_cached=force_cached)
 
     complete_stats = {col: {"values": Meta.get(complete_stats_profile, Path("columns", col, "stats", "frequency"))} for col in complete_stats_cols}
 
     freqs.update(complete_stats)
-    
+
     if freqs:
         for key in freqs:
             if key in stats["columns"]:
@@ -395,7 +389,7 @@ def df__profile_cache(df, cols="*", bins: int = MAX_BUCKETS, sample=None, last_s
                 stats["columns"][key]["stats"].update({"frequency": freqs[key]})
                 if key in complete_stats:
                     stats["columns"][key].update({"done": True})
-            
+
     if hists:
         for key in hists:
             if key in stats["columns"]:
@@ -416,7 +410,7 @@ def df__profile_cache(df, cols="*", bins: int = MAX_BUCKETS, sample=None, last_s
     stats.update({"name": df.meta.get("name")})
     stats.update({"file_name": df.meta.get("file_name")})
     stats.update({"cols_count": df.cols.count()})
-    
+
     return stats
 
 
@@ -441,7 +435,7 @@ def df__deck_map(df, cols="*", text=None, iframe_height=295):
     cols_types = {}
     for col in cols:
         col_type = df.cols.inferred_data_type(col) or df.cols.inferred_data_type(col, use_internal=True)
-        cols_types.update({col: col_type})
+        cols_types[col] = col_type
 
     if len(cols) == 1:
         position = cols
@@ -462,18 +456,20 @@ def df__deck_map(df, cols="*", text=None, iframe_height=295):
 
         if cols_types[position] == "str":
             df_geo = df.cols.strip(position, "[] ")
-            df_geo = df_geo.cols.unnest(position, ",", output_cols=[position+"_X", position+"_Y"])
-            df_geo = df_geo.cols.to_float([position+"_X", position+"_Y"])
-            position = [position+"_X", position+"_Y"]
-        
+            df_geo = df_geo.cols.unnest(
+                position, ",", output_cols=[f"{position}_X", f"{position}_Y"]
+            )
+            df_geo = df_geo.cols.to_float([f"{position}_X", f"{position}_Y"])
+            position = [f"{position}_X", f"{position}_Y"]
+
         else: # elif cols_types[position] == "array":
             def split_coordinates(row):
-                row[position+"_X"] = row[position][0]
-                row[position+"_Y"] = row[position][1]
+                row[f"{position}_X"] = row[position][0]
+                row[f"{position}_Y"] = row[position][1]
                 return row
 
             df_geo = df.rows.apply(split_coordinates, mode="map")
-            position = [position+"_X", position+"_Y"]
+            position = [f"{position}_X", f"{position}_Y"]
     else:
         df_geo = df.cols.to_float(position)
 
@@ -484,7 +480,7 @@ def df__deck_map(df, cols="*", text=None, iframe_height=295):
             df_geo = df_geo.cols.set('alpha', value_func=255, where=df_geo[alpha], default=102)
         else:
             df_geo['alpha'] = 102 + (df_geo[alpha] * (255 - 102) / df_geo.cols.max(alpha)).cols.to_integer()
-        
+
         color = "[48, 158, 227, +alpha]"
 
     import pydeck as pdk
